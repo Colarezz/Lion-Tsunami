@@ -12,375 +12,435 @@ import {
   HOLE_WIDTH_MIN,
   HOLE_WIDTH_MAX,
   EAGLE_START_DISTANCE,
+  HUNTER_START_DISTANCE,
   RIVER_START_DISTANCE,
   LARGE_HOLES_DISTANCE,
+  BUFFALO_START_DISTANCE,
   MIN_GAP_BETWEEN_HOLES,
+  BUFFALO_MIN_LIONS,
 } from '../config.js';
 
 export default class SpawnManager {
   constructor(scene) {
     this.scene = scene;
     this.groundTiles = [];
-    this.obstacles = []; // { sprite, type }
-    this.animals = [];
-    this.nextSpawnX = GAME_WIDTH + 200;
+    this.obstacles = [];   // { sprite, type, extras? }
+    this.animals = [];     // { sprite, type, minLions }
+    this.projectiles = []; // bullet sprites
+    this.hunters = [];     // hunter data for shooting
+    this.nextSpawnX = GAME_WIDTH + 300;
     this.lastHoleEndX = -9999;
+    this.worldX = 0;       // total world scroll offset
 
-    // Ground group for physics
-    this.groundGroup = scene.physics.add.group();
-    this.obstacleGroup = scene.physics.add.group();
-    this.animalGroup = scene.physics.add.group();
+    // Static ground group — tiles are immovable and manually scrolled
+    this.groundGroup = scene.physics.add.staticGroup();
 
-    // Initial ground
+    // Initial ground fill
     this.initGround();
   }
 
   initGround() {
-    // Fill screen with ground tiles + some extra
-    for (let x = 0; x < GAME_WIDTH + 256; x += TILE_SIZE) {
-      this.addGroundTile(x);
+    for (let x = -TILE_SIZE; x < GAME_WIDTH + TILE_SIZE * 5; x += TILE_SIZE) {
+      this._addGroundTile(x + TILE_SIZE / 2);
     }
   }
 
-  addGroundTile(x) {
-    const tile = this.groundGroup.create(x + TILE_SIZE / 2, GROUND_Y + TILE_SIZE / 2, 'ground_tile');
-    tile.setDisplaySize(TILE_SIZE, TILE_SIZE * 1.5);
-    tile.body.setAllowGravity(false);
-    tile.body.setImmovable(true);
-    tile.body.setSize(TILE_SIZE, TILE_SIZE * 1.5);
-    tile.spawnX = x;
+  /** Create a ground tile at centre-x position */
+  _addGroundTile(cx) {
+    // Ground tile texture is 64×80. We display it at 64×96 (TILE_SIZE × 1.5).
+    // Centre the tile so its TOP edge sits exactly at GROUND_Y.
+    const tileH = TILE_SIZE * 1.5; // 96
+    const cy = GROUND_Y + tileH / 2; // centre = GROUND_Y + 48 = 418
+    const tile = this.groundGroup.create(cx, cy, 'ground_tile');
+    tile.setDisplaySize(TILE_SIZE, tileH);
+    // Physics body: full width, full visual height, no extra offset
+    tile.refreshBody(); // sync static body after display-size change
+    tile.body.setSize(TILE_SIZE, tileH, true); // true = centre offset
     this.groundTiles.push(tile);
     return tile;
   }
 
-  /**
-   * Main update - scroll world and spawn new content
-   */
+  // ─────────────────────────────────────────────────────────────
+  //  Main update
+  // ─────────────────────────────────────────────────────────────
   update(speed, distance) {
     const dt = this.scene.game.loop.delta / 1000;
     const dx = speed * dt;
+    this.worldX += dx;
 
-    // Scroll ground tiles
-    this.scrollGround(dx);
+    this._scrollGround(dx);
+    this._scrollExtras(dx);
+    this._scrollProjectiles(speed, dt);
+    this._updateHunters(dx, distance);
 
-    // Scroll obstacles
-    this.scrollObstacles(dx);
-
-    // Scroll animals
-    this.scrollAnimals(dx);
-
-    // Spawn new content
+    // Spawn trigger
     this.nextSpawnX -= dx;
-    if (this.nextSpawnX <= GAME_WIDTH) {
-      this.spawnSegment(distance);
+    if (this.nextSpawnX <= GAME_WIDTH + 64) {
+      this._spawnSegment(distance);
       this.nextSpawnX += SPAWN_INTERVAL_MIN + Math.random() * (SPAWN_INTERVAL_MAX - SPAWN_INTERVAL_MIN);
     }
   }
 
-  scrollGround(dx) {
-    const toRecycle = [];
-
+  // ─────────────────────────────────────────────────────────────
+  //  Ground scrolling
+  // ─────────────────────────────────────────────────────────────
+  _scrollGround(dx) {
+    const toDestroy = [];
     for (const tile of this.groundTiles) {
       tile.x -= dx;
-      tile.body.x = tile.x - TILE_SIZE / 2;
 
-      if (tile.x < -TILE_SIZE) {
-        toRecycle.push(tile);
+      if (tile.x < -TILE_SIZE * 2) {
+        toDestroy.push(tile);
       }
     }
 
-    // Remove off-screen tiles
-    for (const tile of toRecycle) {
-      const idx = this.groundTiles.indexOf(tile);
-      if (idx !== -1) this.groundTiles.splice(idx, 1);
+    for (const tile of toDestroy) {
+      this.groundTiles.splice(this.groundTiles.indexOf(tile), 1);
       tile.destroy();
     }
 
-    // Ensure ground extends past screen
-    if (this.groundTiles.length > 0) {
-      const rightMost = Math.max(...this.groundTiles.map(t => t.x));
-      if (rightMost < GAME_WIDTH + 128) {
-        this.addGroundTile(rightMost + TILE_SIZE);
-      }
+    // Fill to the right
+    const rightMost = this.groundTiles.length
+      ? Math.max(...this.groundTiles.map(t => t.x))
+      : GAME_WIDTH;
+
+    if (rightMost < GAME_WIDTH + TILE_SIZE * 4) {
+      this._addGroundTile(rightMost + TILE_SIZE);
     }
+
+    // Sync all static bodies to their new visual positions
+    this.groundGroup.refresh();
   }
 
-  scrollObstacles(dx) {
+  // Scroll obstacle extras (visual tiles for rivers/holes) and animals
+  _scrollExtras(dx) {
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
-      obs.sprite.x -= dx;
-      if (obs.sprite.body) obs.sprite.body.x = obs.sprite.x - obs.sprite.displayWidth / 2;
 
-      if (obs.sprite.x < -100) {
+      obs.sprite.x -= dx;
+      if (obs.sprite.body) obs.sprite.body.reset(obs.sprite.x, obs.sprite.y);
+
+      if (obs.extras) {
+        for (const e of obs.extras) {
+          if (e.active) e.x -= dx;
+        }
+      }
+
+      if (obs.sprite.x < -200) {
         obs.sprite.destroy();
+        if (obs.extras) obs.extras.forEach(e => { if (e.active) e.destroy(); });
         this.obstacles.splice(i, 1);
       }
     }
-  }
 
-  scrollAnimals(dx) {
     for (let i = this.animals.length - 1; i >= 0; i--) {
-      const animal = this.animals[i];
-      animal.x -= dx;
-      if (animal.body) animal.body.x = animal.x - animal.displayWidth / 2;
+      const a = this.animals[i];
+      a.sprite.x -= dx;
+      if (a.sprite.body) a.sprite.body.reset(a.sprite.x, a.sprite.y);
 
-      if (animal.x < -100) {
-        animal.destroy();
+      if (a.sprite.x < -200) {
+        a.sprite.destroy();
         this.animals.splice(i, 1);
       }
     }
   }
 
-  /**
-   * Spawn a segment of content at the right edge
-   */
-  spawnSegment(distance) {
-    // Determine what can spawn based on distance
-    const canSpawnEagle = distance > EAGLE_START_DISTANCE;
-    const canSpawnRiver = distance > RIVER_START_DISTANCE;
-    const largerholes = distance > LARGE_HOLES_DISTANCE;
-
-    // Weighted random selection
-    const roll = Math.random();
-    const difficultyFactor = Math.min(distance / 3000, 1); // 0-1 over 3km
-
-    const emptyWeight = 0.35 - difficultyFactor * 0.2;
-    const animalWeight = 0.25;
-    const holeWeight = 0.2 + difficultyFactor * 0.1;
-    const eagleWeight = canSpawnEagle ? 0.12 + difficultyFactor * 0.05 : 0;
-    const riverWeight = canSpawnRiver ? 0.08 + difficultyFactor * 0.05 : 0;
-
-    const total = emptyWeight + animalWeight + holeWeight + eagleWeight + riverWeight;
-    const norm = roll * total;
-
-    let cumulative = 0;
-
-    // Empty
-    cumulative += emptyWeight;
-    if (norm < cumulative) {
-      // Add ground and nothing else
-      this.ensureGroundTo(this.nextSpawnX + TILE_SIZE * 3);
-      return;
+  _scrollProjectiles(speed, dt) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (!p.active) { this.projectiles.splice(i, 1); continue; }
+      // Projectiles fly left relative to world
+      p.x -= speed * dt; // world scroll
+      if (p.x < -50) { p.destroy(); this.projectiles.splice(i, 1); }
     }
+  }
 
-    // Animal
-    cumulative += animalWeight;
-    if (norm < cumulative) {
-      this.ensureGroundTo(this.nextSpawnX + TILE_SIZE * 3);
-      this.spawnAnimal(this.nextSpawnX);
-      return;
-    }
-
-    // Hole
-    cumulative += holeWeight;
-    if (norm < cumulative) {
-      // Check minimum gap from last hole
-      if (this.nextSpawnX - this.lastHoleEndX > MIN_GAP_BETWEEN_HOLES) {
-        const holeWidth = largerholes
-          ? HOLE_WIDTH_MIN + Math.random() * (HOLE_WIDTH_MAX - HOLE_WIDTH_MIN)
-          : HOLE_WIDTH_MIN + Math.random() * 40;
-        this.spawnHole(this.nextSpawnX, holeWidth);
-        return;
+  _updateHunters(dx, distance) {
+    for (const h of this.hunters) {
+      h.shootTimer -= dx;
+      if (h.shootTimer <= 0) {
+        h.shootTimer = 180 + Math.random() * 120;
+        this._fireProjectile(h.sprite.x - 20, h.sprite.y - 10);
       }
-      // Too close to last hole, spawn ground instead
-      this.ensureGroundTo(this.nextSpawnX + TILE_SIZE * 3);
-      return;
-    }
-
-    // Eagle
-    cumulative += eagleWeight;
-    if (norm < cumulative) {
-      this.ensureGroundTo(this.nextSpawnX + TILE_SIZE * 3);
-      this.spawnEagle(this.nextSpawnX);
-      return;
-    }
-
-    // River
-    this.spawnRiver(this.nextSpawnX);
-  }
-
-  /**
-   * Ensure ground tiles exist up to x position
-   */
-  ensureGroundTo(targetX) {
-    if (this.groundTiles.length === 0) return;
-
-    const rightMost = Math.max(...this.groundTiles.map(t => t.x));
-    for (let x = rightMost + TILE_SIZE; x <= targetX; x += TILE_SIZE) {
-      this.addGroundTile(x);
     }
   }
 
-  /**
-   * Spawn a hole (gap in ground)
-   */
-  spawnHole(x, width) {
-    // Don't add ground tiles in the gap
-    const holeStart = x;
-    const holeEnd = x + width;
-    this.lastHoleEndX = holeEnd;
+  _fireProjectile(x, y) {
+    const bullet = this.scene.add.rectangle(x, y, 10, 4, 0xffdd00);
+    this.scene.physics.add.existing(bullet);
+    bullet.body.setAllowGravity(false);
+    bullet.body.setVelocityX(-280); // flies left toward lions
+    bullet.setDepth(90);
+    this.projectiles.push(bullet);
+  }
 
-    // Add ground before and after the hole
-    const rightMost = this.groundTiles.length > 0
+  // ─────────────────────────────────────────────────────────────
+  //  Spawn segment
+  // ─────────────────────────────────────────────────────────────
+  _spawnSegment(distance) {
+    const canEagle   = distance > EAGLE_START_DISTANCE;
+    const canHunter  = distance > HUNTER_START_DISTANCE;
+    const canRiver   = distance > RIVER_START_DISTANCE;
+    const canBigHole = distance > LARGE_HOLES_DISTANCE;
+    const canBuffalo = distance > BUFFALO_START_DISTANCE;
+
+    const diff = Math.min(distance / 3000, 1);
+
+    const W = {
+      empty:   Math.max(0.05, 0.35 - diff * 0.2),
+      animal:  0.25,
+      tree:    0.10 + diff * 0.05,
+      hole:    0.15 + diff * 0.08,
+      eagle:   canEagle  ? 0.08 + diff * 0.04 : 0,
+      hunter:  canHunter ? 0.06 + diff * 0.03 : 0,
+      river:   canRiver  ? 0.06 + diff * 0.03 : 0,
+    };
+
+    const total = Object.values(W).reduce((a, b) => a + b, 0);
+    let roll = Math.random() * total;
+    let chosen = 'empty';
+    for (const [key, w] of Object.entries(W)) {
+      roll -= w;
+      if (roll <= 0) { chosen = key; break; }
+    }
+
+    const spawnX = GAME_WIDTH + 80;
+
+    switch (chosen) {
+      case 'animal': {
+        this._ensureGroundAt(spawnX);
+        // Pick type: 60% small, 40% large (if distance allows)
+        const isLarge = canBuffalo && Math.random() < 0.4;
+        if (isLarge) {
+          this._spawnBuffalo(spawnX);
+        } else {
+          this._spawnSmallPrey(spawnX);
+        }
+        break;
+      }
+      case 'tree':
+        this._ensureGroundAt(spawnX);
+        this._spawnTree(spawnX);
+        break;
+      case 'hole': {
+        if (spawnX - this.lastHoleEndX > MIN_GAP_BETWEEN_HOLES) {
+          const w = canBigHole
+            ? HOLE_WIDTH_MIN + Math.random() * (HOLE_WIDTH_MAX - HOLE_WIDTH_MIN)
+            : HOLE_WIDTH_MIN + Math.random() * 40;
+          this._spawnHole(spawnX, w);
+        } else {
+          this._ensureGroundAt(spawnX);
+        }
+        break;
+      }
+      case 'eagle':
+        this._ensureGroundAt(spawnX);
+        this._spawnEagle(spawnX);
+        break;
+      case 'hunter':
+        this._ensureGroundAt(spawnX);
+        this._spawnHunter(spawnX);
+        break;
+      case 'river':
+        this._spawnRiver(spawnX);
+        break;
+      default:
+        this._ensureGroundAt(spawnX);
+        break;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  Ground helpers
+  // ─────────────────────────────────────────────────────────────
+  _ensureGroundAt(untilX) {
+    const rightMost = this.groundTiles.length
       ? Math.max(...this.groundTiles.map(t => t.x))
-      : x - TILE_SIZE;
-
-    // Fill up to hole
-    for (let gx = rightMost + TILE_SIZE; gx < holeStart; gx += TILE_SIZE) {
-      this.addGroundTile(gx);
+      : 0;
+    for (let cx = rightMost + TILE_SIZE; cx <= untilX + TILE_SIZE; cx += TILE_SIZE) {
+      this._addGroundTile(cx);
     }
-
-    // Resume ground after hole
-    for (let gx = holeEnd; gx < holeEnd + TILE_SIZE * 5; gx += TILE_SIZE) {
-      this.addGroundTile(gx);
-    }
-
-    // Visual hole markers (dark edge tiles)
-    const leftEdge = this.scene.add.image(holeStart, GROUND_Y + 20, 'hole_tile')
-      .setDisplaySize(8, TILE_SIZE);
-    const rightEdge = this.scene.add.image(holeEnd, GROUND_Y + 20, 'hole_tile')
-      .setDisplaySize(8, TILE_SIZE);
-
-    // Add a kill zone at the bottom
-    const killZone = this.obstacleGroup.create(
-      holeStart + width / 2,
-      GAME_HEIGHT + 20,
-      null
-    );
-    killZone.setDisplaySize(width, 40);
-    killZone.setVisible(false);
-    killZone.body.setAllowGravity(false);
-    killZone.body.setImmovable(true);
-    killZone.obstacleType = 'hole';
-
-    this.obstacles.push({
-      sprite: killZone,
-      type: 'hole',
-      extras: [leftEdge, rightEdge],
-    });
-
-    // Scroll extras too
-    this.scene.events.on('update', () => {
-      if (leftEdge.active) leftEdge.x = killZone.x - width / 2;
-      if (rightEdge.active) rightEdge.x = killZone.x + width / 2;
-    });
   }
 
-  /**
-   * Spawn an eagle obstacle
-   */
-  spawnEagle(x) {
-    const eagleY = GROUND_Y - 60 - Math.random() * 60; // Varying heights
-
-    const eagle = this.obstacleGroup.create(x, eagleY, 'eagle', 0);
-    eagle.play('eagle_fly');
-    eagle.setSize(36, 20);
-    eagle.setOffset(6, 6);
-    eagle.body.setAllowGravity(false);
-    eagle.body.setImmovable(true);
-    eagle.obstacleType = 'eagle';
-
-    this.obstacles.push({ sprite: eagle, type: 'eagle' });
+  // ─────────────────────────────────────────────────────────────
+  //  Obstacles
+  // ─────────────────────────────────────────────────────────────
+  _spawnTree(x) {
+    const sprite = this.scene.add.sprite(x, GROUND_Y - 28, 'tree_obs');
+    this.scene.physics.add.existing(sprite, false);
+    sprite.body.setAllowGravity(false);
+    sprite.body.setImmovable(true);
+    sprite.body.setSize(20, 56);
+    sprite.setDepth(80);
+    this.obstacles.push({ sprite, type: 'tree' });
   }
 
-  /**
-   * Spawn a river (acts like a hole but visually different)
-   */
-  spawnRiver(x) {
-    const width = 100 + Math.random() * 60;
+  _spawnEagle(x) {
+    const eagleY = GROUND_Y - 80 - Math.random() * 60;
+    const sprite = this.scene.add.sprite(x, eagleY, 'eagle', 0);
+    sprite.play('eagle_fly');
+    this.scene.physics.add.existing(sprite, false);
+    sprite.body.setAllowGravity(false);
+    sprite.body.setImmovable(true);
+    sprite.body.setSize(36, 20);
+    sprite.setDepth(85);
 
-    // Remove ground and add river tiles
-    const rightMost = this.groundTiles.length > 0
-      ? Math.max(...this.groundTiles.map(t => t.x))
-      : x - TILE_SIZE;
+    // Warn sound
+    try { this.scene.audio && this.scene.audio.playEagle(); } catch (e) {}
 
-    for (let gx = rightMost + TILE_SIZE; gx < x; gx += TILE_SIZE) {
-      this.addGroundTile(gx);
-    }
+    this.obstacles.push({ sprite, type: 'eagle' });
+  }
 
-    // River visual tiles
-    const riverTiles = [];
-    for (let rx = x; rx < x + width; rx += TILE_SIZE) {
-      const riverTile = this.scene.add.image(rx + TILE_SIZE / 2, GROUND_Y + 20, 'river_tile')
-        .setDisplaySize(TILE_SIZE, TILE_SIZE * 1.2);
-      riverTiles.push(riverTile);
-    }
+  _spawnHunter(x) {
+    const sprite = this.scene.add.sprite(x, GROUND_Y - 28, 'hunter');
+    this.scene.physics.add.existing(sprite, false);
+    sprite.body.setAllowGravity(false);
+    sprite.body.setImmovable(true);
+    sprite.body.setSize(20, 56);
+    sprite.setDepth(80);
 
-    // Ground after river
-    for (let gx = x + width; gx < x + width + TILE_SIZE * 5; gx += TILE_SIZE) {
-      this.addGroundTile(gx);
-    }
+    const hunterData = { sprite, shootTimer: 60 + Math.random() * 60 };
+    this.hunters.push(hunterData);
+    this.obstacles.push({ sprite, type: 'hunter', hunterData });
+  }
 
-    // Kill zone
-    const killZone = this.obstacleGroup.create(
-      x + width / 2,
-      GROUND_Y + 10,
-      null
-    );
-    killZone.setDisplaySize(width - 10, 30);
-    killZone.setVisible(false);
-    killZone.body.setAllowGravity(false);
-    killZone.body.setImmovable(true);
-    killZone.obstacleType = 'river';
-
-    this.obstacles.push({
-      sprite: killZone,
-      type: 'river',
-      extras: riverTiles,
-    });
-
+  _spawnHole(x, width) {
     this.lastHoleEndX = x + width;
 
-    // Scroll river tiles with killzone
-    this.scene.events.on('update', () => {
-      riverTiles.forEach((rt, idx) => {
-        if (rt.active) {
-          rt.x = killZone.x - width / 2 + idx * TILE_SIZE + TILE_SIZE / 2;
-        }
-      });
-    });
-  }
-
-  /**
-   * Spawn a neutral animal (zebra or giraffe)
-   */
-  spawnAnimal(x) {
-    const type = Math.random() > 0.5 ? 'zebra' : 'giraffe';
-    const animalY = type === 'giraffe' ? GROUND_Y - 24 : GROUND_Y - 16;
-
-    const animal = this.animalGroup.create(x, animalY, type, 0);
-    animal.play(type === 'zebra' ? 'zebra_idle' : 'giraffe_idle');
-    animal.setSize(30, type === 'giraffe' ? 44 : 32);
-    animal.setOffset(9, type === 'giraffe' ? 8 : 12);
-    animal.body.setAllowGravity(false);
-    animal.body.setImmovable(true);
-    animal.animalType = type;
-
-    this.animals.push(animal);
-  }
-
-  /**
-   * Remove an animal from tracking after conversion
-   */
-  removeAnimal(animal) {
-    const idx = this.animals.indexOf(animal);
-    if (idx !== -1) {
-      this.animals.splice(idx, 1);
+    // Remove existing ground tiles that overlap the hole
+    const toDestroy = [];
+    for (const tile of this.groundTiles) {
+      const tileLeft = tile.x - TILE_SIZE / 2;
+      const tileRight = tile.x + TILE_SIZE / 2;
+      if (tileRight > x && tileLeft < x + width) {
+        toDestroy.push(tile);
+      }
     }
+    for (const tile of toDestroy) {
+      this.groundTiles.splice(this.groundTiles.indexOf(tile), 1);
+      tile.destroy();
+    }
+
+    // Fill ground up to hole start
+    this._ensureGroundAt(x - TILE_SIZE);
+
+    // Fill ground after hole
+    for (let cx = x + width; cx <= x + width + TILE_SIZE * 5; cx += TILE_SIZE) {
+      this._addGroundTile(cx);
+    }
+
+    // Visual dark void
+    const void1 = this.scene.add.rectangle(
+      x + width / 2, GAME_HEIGHT - 20, width, 40, 0x0a0500
+    ).setDepth(5);
+
+    // Invisible kill sensor — sits below ground level
+    const sensor = this.scene.add.rectangle(
+      x + width / 2, GAME_HEIGHT + 40, width, 20, 0xff0000, 0
+    );
+    this.scene.physics.add.existing(sensor, false);
+    sensor.body.setAllowGravity(false);
+    sensor.body.setImmovable(true);
+    sensor.body.setSize(width, 20);
+
+    this.obstacles.push({ sprite: sensor, type: 'hole', extras: [void1] });
   }
 
-  /**
-   * Destroy everything
-   */
+  _spawnRiver(x) {
+    const width = 100 + Math.random() * 60;
+    this.lastHoleEndX = x + width;
+
+    // Remove existing ground tiles that overlap the river
+    const toDestroy = [];
+    for (const tile of this.groundTiles) {
+      const tileLeft = tile.x - TILE_SIZE / 2;
+      const tileRight = tile.x + TILE_SIZE / 2;
+      if (tileRight > x && tileLeft < x + width) {
+        toDestroy.push(tile);
+      }
+    }
+    for (const tile of toDestroy) {
+      this.groundTiles.splice(this.groundTiles.indexOf(tile), 1);
+      tile.destroy();
+    }
+
+    this._ensureGroundAt(x - TILE_SIZE);
+
+    // River visual tiles
+    const extras = [];
+    for (let rx = x; rx < x + width; rx += TILE_SIZE) {
+      const rt = this.scene.add.image(rx + TILE_SIZE / 2, GROUND_Y + 20, 'river_tile')
+        .setDisplaySize(TILE_SIZE, TILE_SIZE * 1.2).setDepth(10);
+      extras.push(rt);
+    }
+
+    for (let cx = x + width; cx <= x + width + TILE_SIZE * 5; cx += TILE_SIZE) {
+      this._addGroundTile(cx);
+    }
+
+    // Kill zone at ground level (touching ground surface)
+    const sensor = this.scene.add.rectangle(
+      x + width / 2, GROUND_Y + 2, width - 10, 20, 0x0000ff, 0
+    );
+    this.scene.physics.add.existing(sensor, false);
+    sensor.body.setAllowGravity(false);
+    sensor.body.setImmovable(true);
+    sensor.body.setSize(width - 10, 20);
+
+    this.obstacles.push({ sprite: sensor, type: 'river', extras });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  Animals / Prey
+  // ─────────────────────────────────────────────────────────────
+  _spawnSmallPrey(x) {
+    const type = Math.random() > 0.5 ? 'meerkat' : 'hare';
+    const sprite = this.scene.add.sprite(x, GROUND_Y - 14, type, 0);
+    sprite.play(type + '_idle');
+    this.scene.physics.add.existing(sprite, false);
+    sprite.body.setAllowGravity(false);
+    sprite.body.setImmovable(true);
+    sprite.body.setSize(20, 24);
+    sprite.setDepth(75);
+    this.animals.push({ sprite, type, minLions: 1 });
+  }
+
+  _spawnBuffalo(x) {
+    const sprite = this.scene.add.sprite(x, GROUND_Y - 28, 'buffalo', 0);
+    sprite.play('buffalo_idle');
+    this.scene.physics.add.existing(sprite, false);
+    sprite.body.setAllowGravity(false);
+    sprite.body.setImmovable(true);
+    sprite.body.setSize(40, 50);
+    sprite.setDepth(75);
+    this.animals.push({ sprite, type: 'buffalo', minLions: BUFFALO_MIN_LIONS });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  Public helpers
+  // ─────────────────────────────────────────────────────────────
+  removeAnimal(animalData) {
+    const idx = this.animals.indexOf(animalData);
+    if (idx !== -1) this.animals.splice(idx, 1);
+  }
+
+  removeHunter(sprite) {
+    const idx = this.hunters.findIndex(h => h.sprite === sprite);
+    if (idx !== -1) this.hunters.splice(idx, 1);
+  }
+
   destroy() {
     this.groundTiles.forEach(t => t.destroy());
     this.obstacles.forEach(o => {
       o.sprite.destroy();
-      if (o.extras) o.extras.forEach(e => e.destroy());
+      if (o.extras) o.extras.forEach(e => { if (e.active) e.destroy(); });
     });
-    this.animals.forEach(a => a.destroy());
+    this.animals.forEach(a => a.sprite.destroy());
+    this.projectiles.forEach(p => { if (p.active) p.destroy(); });
+    this.hunters = [];
     this.groundTiles = [];
     this.obstacles = [];
     this.animals = [];
+    this.projectiles = [];
   }
 }

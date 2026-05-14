@@ -48,8 +48,11 @@ export default class Horde {
     if (this.lions.length > 0) {
       const lastLion = this.lions[this.lions.length - 1];
       lion.x = lastLion.x - LION_SPACING;
-      lion.y = lastLion.y;
+      lion.y = lastLion.y - 10; // Spawn slightly higher
     }
+
+    // Reset physics body to ensure it applies immediately
+    if (lion.body) lion.body.reset(lion.x, lion.y);
 
     this.lions.push(lion);
 
@@ -57,10 +60,8 @@ export default class Horde {
     this.scene.tweens.add({
       targets: lion,
       alpha: { from: 0.3, to: 1 },
-      scaleX: { from: 1.5, to: 1 },
-      scaleY: { from: 1.5, to: 1 },
       duration: 300,
-      ease: 'Back.easeOut',
+      ease: 'Linear',
     });
 
     return lion;

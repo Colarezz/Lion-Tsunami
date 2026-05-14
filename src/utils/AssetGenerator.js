@@ -20,6 +20,11 @@ export function generateAssets(scene) {
   generateRiverTile(scene);
   generateParallaxLayers(scene);
   generateParticle(scene);
+  generateTreeSprite(scene);
+  generateHunterSprite(scene);
+  generateMeerkatSprite(scene);
+  generateHareSprite(scene);
+  generateBuffaloSprite(scene);
 }
 
 // ---- Lion (running) ----
@@ -731,4 +736,196 @@ function generateParticle(scene) {
   ctx.fill();
 
   canvas.refresh();
+}
+
+// ---- Tree ----
+function generateTreeSprite(scene) {
+  const w = 64, h = 100;
+  const canvas = scene.textures.createCanvas('tree', w, h);
+  const ctx = canvas.getContext();
+  
+  // Trunk
+  ctx.fillStyle = '#5d4037';
+  ctx.fillRect(28, 40, 8, 60);
+  
+  // Leaves
+  ctx.fillStyle = '#558b2f';
+  ctx.beginPath();
+  ctx.ellipse(32, 30, 30, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.fillStyle = '#7cb342';
+  ctx.beginPath();
+  ctx.ellipse(36, 25, 20, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  canvas.refresh();
+}
+
+// ---- Hunter ----
+function generateHunterSprite(scene) {
+  const w = 32, h = 48;
+  const canvas = scene.textures.createCanvas('hunter', w, h);
+  const ctx = canvas.getContext();
+  
+  // Legs
+  ctx.fillStyle = '#4a3728';
+  ctx.fillRect(10, 30, 4, 18);
+  ctx.fillRect(18, 30, 4, 18);
+  
+  // Body
+  ctx.fillStyle = '#5b7553';
+  ctx.fillRect(8, 14, 16, 16);
+  
+  // Head
+  ctx.fillStyle = '#c68642';
+  ctx.beginPath();
+  ctx.arc(16, 8, 6, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Hat
+  ctx.fillStyle = '#4a3728';
+  ctx.fillRect(6, 0, 20, 4);
+  ctx.fillRect(10, -4, 12, 4);
+  
+  // Gun
+  ctx.fillStyle = '#444';
+  ctx.fillRect(2, 20, 24, 3);
+  
+  canvas.refresh();
+}
+
+// ---- Meerkat ----
+function generateMeerkatSprite(scene) {
+  const frames = 2;
+  const w = 24, h = 32;
+  const canvas = scene.textures.createCanvas('meerkat', w * frames, h);
+  const ctx = canvas.getContext();
+
+  for (let f = 0; f < frames; f++) {
+    const ox = f * w;
+    const bounce = f * 2;
+    ctx.save();
+    ctx.translate(ox, 0);
+
+    // Body standing
+    ctx.fillStyle = '#d4a060';
+    ctx.beginPath();
+    ctx.ellipse(12, 20 + bounce, 6, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(12, 8 + bounce, 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.fillRect(10, 6 + bounce, 2, 2);
+    ctx.fillRect(14, 6 + bounce, 2, 2);
+
+    ctx.restore();
+  }
+  canvas.refresh();
+  scene.textures.get('meerkat').add(0, 0, 0, 0, w, h);
+  scene.textures.get('meerkat').add(1, 0, w, 0, w, h);
+  scene.anims.create({
+    key: 'meerkat_idle',
+    frames: [{ key: 'meerkat', frame: 0 }, { key: 'meerkat', frame: 1 }],
+    frameRate: 4,
+    repeat: -1
+  });
+}
+
+// ---- Hare ----
+function generateHareSprite(scene) {
+  const frames = 2;
+  const w = 24, h = 24;
+  const canvas = scene.textures.createCanvas('hare', w * frames, h);
+  const ctx = canvas.getContext();
+
+  for (let f = 0; f < frames; f++) {
+    const ox = f * w;
+    const bounce = f * 2;
+    ctx.save();
+    ctx.translate(ox, 0);
+
+    // Body
+    ctx.fillStyle = '#c9a872';
+    ctx.beginPath();
+    ctx.ellipse(12, 16 + bounce, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ears
+    ctx.fillRect(14, 4 + bounce, 2, 8);
+    ctx.fillRect(18, 4 + bounce, 2, 8);
+
+    // Eye
+    ctx.fillStyle = '#111';
+    ctx.fillRect(18, 12 + bounce, 2, 2);
+
+    ctx.restore();
+  }
+  canvas.refresh();
+  scene.textures.get('hare').add(0, 0, 0, 0, w, h);
+  scene.textures.get('hare').add(1, 0, w, 0, w, h);
+  scene.anims.create({
+    key: 'hare_idle',
+    frames: [{ key: 'hare', frame: 0 }, { key: 'hare', frame: 1 }],
+    frameRate: 5,
+    repeat: -1
+  });
+}
+
+// ---- Buffalo ----
+function generateBuffaloSprite(scene) {
+  const frames = 2;
+  const w = 56, h = 48;
+  const canvas = scene.textures.createCanvas('buffalo', w * frames, h);
+  const ctx = canvas.getContext();
+
+  for (let f = 0; f < frames; f++) {
+    const ox = f * w;
+    const bounce = f * 2;
+    ctx.save();
+    ctx.translate(ox, 0);
+
+    // Body
+    ctx.fillStyle = '#3e2723';
+    ctx.beginPath();
+    ctx.ellipse(28, 26 + bounce, 20, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(42, 20 + bounce, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Horns
+    ctx.fillStyle = '#555';
+    ctx.beginPath();
+    ctx.moveTo(38, 12 + bounce);
+    ctx.lineTo(44, 4 + bounce);
+    ctx.lineTo(46, 12 + bounce);
+    ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#2d1a11';
+    const lp = f * Math.PI;
+    ctx.fillRect(32 + Math.sin(lp) * 4, 38 + bounce, 6, 10);
+    ctx.fillRect(24 + Math.sin(lp + Math.PI) * 4, 38 + bounce, 6, 10);
+    ctx.fillRect(16 + Math.sin(lp + Math.PI) * 4, 38 + bounce, 6, 10);
+    ctx.fillRect(12 + Math.sin(lp) * 4, 38 + bounce, 6, 10);
+
+    ctx.restore();
+  }
+  canvas.refresh();
+  scene.textures.get('buffalo').add(0, 0, 0, 0, w, h);
+  scene.textures.get('buffalo').add(1, 0, w, 0, w, h);
+  scene.anims.create({
+    key: 'buffalo_idle',
+    frames: [{ key: 'buffalo', frame: 0 }, { key: 'buffalo', frame: 1 }],
+    frameRate: 3,
+    repeat: -1
+  });
 }
