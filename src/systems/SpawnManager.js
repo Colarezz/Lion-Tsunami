@@ -114,11 +114,19 @@ export default class SpawnManager {
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
       obs.sprite.x -= dx;
-      if (obs.sprite.body) obs.sprite.body.reset(obs.sprite.x, obs.sprite.y);
+      // Handle both static and dynamic bodies
+      if (obs.sprite.body) {
+        if (obs.sprite.body.isStatic) {
+          obs.sprite.body.position.x = obs.sprite.x - obs.sprite.body.width / 2;
+          obs.sprite.body.updateCenter();
+        } else {
+          obs.sprite.body.reset(obs.sprite.x, obs.sprite.y);
+        }
+      }
       if (obs.extras) {
         for (const e of obs.extras) { if (e.active) e.x -= dx; }
       }
-      if (obs.sprite.x < -200) {
+      if (obs.sprite.x < -300) {
         obs.sprite.destroy();
         if (obs.extras) obs.extras.forEach(e => { if (e.active) e.destroy(); });
         this.obstacles.splice(i, 1);
@@ -392,13 +400,25 @@ export default class SpawnManager {
     for (let cx = x + width; cx <= x + width + TILE_SIZE * 5; cx += TILE_SIZE) {
       this._addGroundTile(cx);
     }
-    const void1 = this.scene.add.rectangle(x + width / 2, GAME_HEIGHT - 20, width, 40, 0x0a0500).setDepth(5);
+    // Dark void filling the gap from ground level to screen bottom
+    const voidH = GAME_HEIGHT - GROUND_Y;
+    const void1 = this.scene.add.rectangle(
+      x + width / 2, GROUND_Y + voidH / 2,
+      width + 4, voidH, 0x0a0500
+    ).setDepth(5);
+    // Crumbling edge effect at top
+    const edge = this.scene.add.rectangle(
+      x + width / 2, GROUND_Y + 2,
+      width + 4, 6, 0x5a3a10
+    ).setDepth(6);
+    // Invisible sensor is not needed — lions fall and die via y > GAME_HEIGHT check
+    // But we keep a reference for cleanup
     const sensor = this.scene.add.rectangle(x + width / 2, GAME_HEIGHT + 40, width, 20, 0xff0000, 0);
     this.scene.physics.add.existing(sensor, false);
     sensor.body.setAllowGravity(false);
     sensor.body.setImmovable(true);
     sensor.body.setSize(width, 20);
-    this.obstacles.push({ sprite: sensor, type: 'hole', extras: [void1] });
+    this.obstacles.push({ sprite: sensor, type: 'hole', extras: [void1, edge] });
   }
 
   _spawnRiver(x) {
@@ -415,19 +435,23 @@ export default class SpawnManager {
     }
     this._ensureGroundAt(x - TILE_SIZE);
     const extras = [];
+    // River tiles fill from GROUND_Y downward (same as ground tiles)
+    const riverH = GAME_HEIGHT - GROUND_Y;
     for (let rx = x; rx < x + width; rx += TILE_SIZE) {
-      const rt = this.scene.add.image(rx + TILE_SIZE / 2, GROUND_Y + 20, 'river_tile')
-        .setDisplaySize(TILE_SIZE, TILE_SIZE * 1.2).setDepth(10);
+      const rt = this.scene.add.image(
+        rx + TILE_SIZE / 2, GROUND_Y + riverH / 2, 'river_tile'
+      ).setDisplaySize(TILE_SIZE, riverH).setDepth(10);
       extras.push(rt);
     }
     for (let cx = x + width; cx <= x + width + TILE_SIZE * 5; cx += TILE_SIZE) {
       this._addGroundTile(cx);
     }
-    const sensor = this.scene.add.rectangle(x + width / 2, GROUND_Y + 2, width - 10, 20, 0x0000ff, 0);
-    this.scene.physics.add.existing(sensor, false);
-    sensor.body.setAllowGravity(false);
-    sensor.body.setImmovable(true);
-    sensor.body.setSize(width - 10, 20);
+    // Kill sensor sits at ground level — lions land on it and die
+    const sensor = this.scene.add.rectangle(
+      x + width / 2, GROUND_Y + 10, width - 6, 24, 0x0000ff, 0
+    );
+    this.scene.physics.add.existing(sensor, true); // static body
+    sensor.body.setSize(width - 6, 24);
     this.obstacles.push({ sprite: sensor, type: 'river', extras });
   }
 
