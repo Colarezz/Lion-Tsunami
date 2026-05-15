@@ -8,6 +8,7 @@ import BootScene from './scenes/BootScene.js';
 import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 import GameOverScene from './scenes/GameOverScene.js';
+import ShopScene from './scenes/ShopScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -27,7 +28,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, GameScene, GameOverScene],
+  scene: [BootScene, MenuScene, GameScene, GameOverScene, ShopScene],
 };
 
 new Phaser.Game(config);

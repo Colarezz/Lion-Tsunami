@@ -25,6 +25,8 @@ export function generateAssets(scene) {
   generateMeerkatSprite(scene);
   generateHareSprite(scene);
   generateBuffaloSprite(scene);
+  generateElephantSprite(scene);
+  generateCoinSprite(scene);
 }
 
 // ---- Lion (running) ----
@@ -837,10 +839,10 @@ function generateMeerkatSprite(scene) {
   });
 }
 
-// ---- Hare ----
+// ---- Hare (improved rabbit) ----
 function generateHareSprite(scene) {
   const frames = 2;
-  const w = 24, h = 24;
+  const w = 28, h = 28;
   const canvas = scene.textures.createCanvas('hare', w * frames, h);
   const ctx = canvas.getContext();
 
@@ -853,16 +855,55 @@ function generateHareSprite(scene) {
     // Body
     ctx.fillStyle = '#c9a872';
     ctx.beginPath();
-    ctx.ellipse(12, 16 + bounce, 8, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(12, 18 + bounce, 9, 7, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ears
-    ctx.fillRect(14, 4 + bounce, 2, 8);
-    ctx.fillRect(18, 4 + bounce, 2, 8);
+    // Head
+    ctx.fillStyle = '#d4b882';
+    ctx.beginPath();
+    ctx.arc(20, 14 + bounce, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Long ears
+    ctx.fillStyle = '#c9a872';
+    ctx.beginPath();
+    ctx.ellipse(17, 4 + bounce, 2, 7, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(21, 3 + bounce, 2, 8, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner ear
+    ctx.fillStyle = '#e8c0a0';
+    ctx.beginPath();
+    ctx.ellipse(17, 4 + bounce, 1, 5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(21, 3 + bounce, 1, 6, 0.15, 0, Math.PI * 2);
+    ctx.fill();
 
     // Eye
     ctx.fillStyle = '#111';
-    ctx.fillRect(18, 12 + bounce, 2, 2);
+    ctx.beginPath();
+    ctx.arc(22, 13 + bounce, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nose
+    ctx.fillStyle = '#e8a0a0';
+    ctx.beginPath();
+    ctx.arc(25, 15 + bounce, 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail (fluffy)
+    ctx.fillStyle = '#f0e8d8';
+    ctx.beginPath();
+    ctx.arc(4, 17 + bounce, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#b89860';
+    const lp = f * Math.PI;
+    ctx.fillRect(16 + Math.sin(lp) * 2, 23 + bounce, 3, 5);
+    ctx.fillRect(8 + Math.sin(lp + Math.PI) * 2, 23 + bounce, 3, 5);
 
     ctx.restore();
   }
@@ -926,6 +967,145 @@ function generateBuffaloSprite(scene) {
     key: 'buffalo_idle',
     frames: [{ key: 'buffalo', frame: 0 }, { key: 'buffalo', frame: 1 }],
     frameRate: 3,
+    repeat: -1
+  });
+}
+
+// ---- Elephant ----
+function generateElephantSprite(scene) {
+  const frames = 2;
+  const w = 64, h = 56;
+  const canvas = scene.textures.createCanvas('elephant', w * frames, h);
+  const ctx = canvas.getContext();
+
+  for (let f = 0; f < frames; f++) {
+    const ox = f * w;
+    const bounce = f * 1.5;
+    ctx.save();
+    ctx.translate(ox, 0);
+
+    // Body
+    ctx.fillStyle = '#8a8a8a';
+    ctx.beginPath();
+    ctx.ellipse(30, 28 + bounce, 24, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = '#7a7a7a';
+    ctx.beginPath();
+    ctx.arc(50, 18 + bounce, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ear
+    ctx.fillStyle = '#6a6a6a';
+    ctx.beginPath();
+    ctx.ellipse(42, 14 + bounce, 8, 12, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#9a8a8a';
+    ctx.beginPath();
+    ctx.ellipse(42, 14 + bounce, 5, 8, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Trunk
+    ctx.strokeStyle = '#7a7a7a';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(58, 24 + bounce);
+    ctx.quadraticCurveTo(64, 32 + bounce, 60, 40 + bounce + f * 3);
+    ctx.stroke();
+
+    // Tusk
+    ctx.fillStyle = '#f5f0e0';
+    ctx.beginPath();
+    ctx.moveTo(56, 26 + bounce);
+    ctx.quadraticCurveTo(62, 28 + bounce, 60, 34 + bounce);
+    ctx.lineTo(57, 28 + bounce);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(54, 16 + bounce, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#6a6a6a';
+    const lp = f * Math.PI;
+    ctx.fillRect(36 + Math.sin(lp) * 3, 40 + bounce, 7, 14);
+    ctx.fillRect(26 + Math.sin(lp + Math.PI) * 3, 40 + bounce, 7, 14);
+    ctx.fillRect(16 + Math.sin(lp + Math.PI) * 3, 40 + bounce, 7, 14);
+    ctx.fillRect(10 + Math.sin(lp) * 3, 40 + bounce, 7, 14);
+
+    // Tail
+    ctx.strokeStyle = '#6a6a6a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(6, 22 + bounce);
+    ctx.lineTo(2, 16 + bounce);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+  canvas.refresh();
+  scene.textures.get('elephant').add(0, 0, 0, 0, w, h);
+  scene.textures.get('elephant').add(1, 0, w, 0, w, h);
+  scene.anims.create({
+    key: 'elephant_idle',
+    frames: [{ key: 'elephant', frame: 0 }, { key: 'elephant', frame: 1 }],
+    frameRate: 3,
+    repeat: -1
+  });
+}
+
+// ---- Coin ----
+function generateCoinSprite(scene) {
+  const frames = 4;
+  const w = 20, h = 20;
+  const canvas = scene.textures.createCanvas('coin', w * frames, h);
+  const ctx = canvas.getContext();
+
+  for (let f = 0; f < frames; f++) {
+    const ox = f * w;
+    const scaleX = Math.cos((f / frames) * Math.PI * 2) * 0.5 + 0.5;
+    ctx.save();
+    ctx.translate(ox + w / 2, h / 2);
+
+    // Coin body
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 8 * Math.max(scaleX, 0.3), 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shine
+    ctx.fillStyle = '#ffec8b';
+    ctx.beginPath();
+    ctx.ellipse(-2 * scaleX, -2, 3 * Math.max(scaleX, 0.2), 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#daa520';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 8 * Math.max(scaleX, 0.3), 8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+  canvas.refresh();
+  scene.textures.get('coin').add(0, 0, 0, 0, w, h);
+  scene.textures.get('coin').add(1, 0, w, 0, w, h);
+  scene.textures.get('coin').add(2, 0, w * 2, 0, w, h);
+  scene.textures.get('coin').add(3, 0, w * 3, 0, w, h);
+  scene.anims.create({
+    key: 'coin_spin',
+    frames: [
+      { key: 'coin', frame: 0 },
+      { key: 'coin', frame: 1 },
+      { key: 'coin', frame: 2 },
+      { key: 'coin', frame: 3 },
+    ],
+    frameRate: 6,
     repeat: -1
   });
 }
