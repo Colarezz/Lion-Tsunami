@@ -11,7 +11,6 @@ export default class DifficultyManager {
   }
 
   update(distance) {
-    // Increase speed every 500m
     const speedSteps = Math.floor(distance / 500);
     this.currentSpeed = Math.min(
       BASE_SPEED + speedSteps * SPEED_INCREMENT,

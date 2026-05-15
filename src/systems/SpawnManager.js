@@ -266,7 +266,7 @@ export default class SpawnManager {
   //  Obstacles
   // ─────────────────────────────────────────────────────────────
   _spawnTree(x) {
-    const sprite = this.scene.add.sprite(x, GROUND_Y - 28, 'tree_obs');
+    const sprite = this.scene.add.sprite(x, GROUND_Y - 28, 'tree');
     this.scene.physics.add.existing(sprite, false);
     sprite.body.setAllowGravity(false);
     sprite.body.setImmovable(true);
