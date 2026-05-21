@@ -8,7 +8,6 @@ import BootScene from './scenes/BootScene.js';
 import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 import GameOverScene from './scenes/GameOverScene.js';
-import ShopScene from './scenes/ShopScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -16,7 +15,7 @@ const config = {
   height: GAME_HEIGHT,
   parent: 'game-container',
   backgroundColor: '#1a0a00',
-  pixelArt: false,
+  pixelArt: true,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -28,7 +27,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, GameScene, GameOverScene, ShopScene],
+  scene: [BootScene, MenuScene, GameScene, GameOverScene],
 };
 
 new Phaser.Game(config);

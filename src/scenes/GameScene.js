@@ -4,9 +4,17 @@
 
 import Phaser from 'phaser';
 import {
-  GAME_WIDTH, GAME_HEIGHT, GROUND_Y,
-  JUMP_VELOCITY, JUMP_HOLD_VELOCITY, JUMP_HOLD_DURATION,
-  SCORE_PER_METER, MULTIPLIER_THRESHOLDS, COIN_VALUE,
+  GAME_WIDTH,
+  GAME_HEIGHT,
+  GROUND_Y,
+  JUMP_VELOCITY,
+  JUMP_HOLD_VELOCITY,
+  JUMP_HOLD_DURATION,
+  SCORE_PER_METER,
+  SCORE_PER_SMALL_PREY,
+  SCORE_PER_LARGE_PREY,
+  MULTIPLIER_THRESHOLDS,
+  BUFFALO_MIN_LIONS,
 } from '../config.js';
 import Horde from '../entities/Horde.js';
 import SpawnManager from '../systems/SpawnManager.js';
@@ -16,34 +24,45 @@ import AudioManager from '../systems/AudioManager.js';
 import HUD from '../ui/HUD.js';
 
 export default class GameScene extends Phaser.Scene {
-  constructor() { super({ key: 'GameScene' }); }
+  constructor() {
+    super({ key: 'GameScene' });
+  }
 
   create() {
     this.isGameOver = false;
     this.distance = 0;
     this.score = 0;
-    this.coinsCollected = 0;
     this.jumpHeldTime = 0;
     this.isJumpPressed = false;
     this.jumpTriggered = false;
-    this._lastObstacleHitTime = 0;
+    this._lastObstacleHitTime = 0; // debounce
 
-    // Load saved coins
-    this.totalCoins = parseInt(localStorage.getItem('lionTsunamiCoins') || '0');
-
+    // Audio
     this.audio = new AudioManager();
     this.audio.init();
 
+    // Systems (order matters — ground must exist before horde setup)
     this.difficulty = new DifficultyManager();
     this.parallax = new ParallaxBg(this);
     this.spawnManager = new SpawnManager(this);
     this.horde = new Horde(this);
+
+    // Initialize horde with 1 lion
     this.horde.init(150, GROUND_Y - 30);
+
+    // Ground collision (dynamic group — collider works on all children)
     this.physics.add.collider(this.horde.group, this.spawnManager.groundGroup);
+
+    // HUD
     this.hud = new HUD(this);
+
+    // Setup input
     this.setupInput();
+
+    // Camera fade in
     this.cameras.main.fadeIn(300, 0, 0, 0);
 
+    // Dust particles
     this.dustEmitter = this.add.particles(0, 0, 'particle', {
       speed: { min: 10, max: 30 },
       scale: { start: 0.5, end: 0 },
@@ -54,14 +73,12 @@ export default class GameScene extends Phaser.Scene {
       angle: { min: 160, max: 200 },
     });
     this.dustEmitter.setDepth(50);
-
-    // Start background music
-    this.audio.startMusic();
   }
 
   setupInput() {
     this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.upKey    = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+
     this.input.on('pointerdown', () => { this.audio.resume(); this.onJumpStart(); });
     this.input.on('pointerup',   () => this.onJumpEnd());
   }
@@ -83,8 +100,10 @@ export default class GameScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     const speed = this.difficulty.update(this.distance);
+
     this.distance += speed * dt / 10;
 
+    // Score: distance + multiplier
     const multiplier = this._getMultiplier();
     this.score += speed * dt / 10 * SCORE_PER_METER * multiplier;
 
@@ -93,8 +112,7 @@ export default class GameScene extends Phaser.Scene {
     this.spawnManager.update(speed, this.distance);
     this.horde.update();
     this.checkCollisions();
-    this.checkCoinCollisions();
-    this.hud.update(this.horde.count, this.distance, speed, Math.floor(this.score), multiplier, this.totalCoins + this.coinsCollected);
+    this.hud.update(this.horde.count, this.distance, speed, Math.floor(this.score), multiplier);
     this.updateDust();
 
     if (this.horde.isDead) this.gameOver();
@@ -122,6 +140,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.isJumpPressed) {
       this.jumpHeldTime += delta;
+
       if (!this.jumpTriggered) {
         this.horde.jump(false);
         this.jumpTriggered = true;
@@ -135,43 +154,12 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  checkCoinCollisions() {
-    const lions = this.horde.getSprites();
-    if (lions.length === 0) return;
-    const leader = lions[0];
-    if (!leader || !leader.active) return;
-
-    for (let i = this.spawnManager.coins.length - 1; i >= 0; i--) {
-      const coinData = this.spawnManager.coins[i];
-      if (!coinData.sprite.active) continue;
-
-      if (this.physics.overlap(leader, coinData.sprite)) {
-        this.coinsCollected += COIN_VALUE;
-        // Sparkle effect
-        const particles = this.add.particles(coinData.sprite.x, coinData.sprite.y, 'particle', {
-          speed: { min: 40, max: 100 },
-          scale: { start: 0.8, end: 0 },
-          tint: [0xffd700, 0xffec8b, 0xffa500],
-          lifespan: 250,
-          quantity: 5,
-          emitting: false,
-        });
-        particles.explode(5);
-        this.time.delayedCall(300, () => particles.destroy());
-
-        coinData.sprite.destroy();
-        this.spawnManager.removeCoin(coinData);
-        this.audio.playCoin();
-      }
-    }
-  }
-
   checkCollisions() {
     const lions = this.horde.getSprites();
     if (lions.length === 0) return;
     const now = this.time.now;
 
-    // Lions falling into holes
+    // ── Lions falling off screen into holes ──
     for (let i = lions.length - 1; i >= 0; i--) {
       const lion = lions[i];
       if (lion.y > GAME_HEIGHT + 50) {
@@ -182,27 +170,30 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Obstacles
+    // ── Obstacles ──
     for (let oi = this.spawnManager.obstacles.length - 1; oi >= 0; oi--) {
       const obs = this.spawnManager.obstacles[oi];
-      if (obs.type === 'hole') continue;
+      if (obs.type === 'hole') continue; // handled by fall detection
 
       for (let li = lions.length - 1; li >= 0; li--) {
         const lion = lions[li];
         if (!lion.active || lion.isDead) continue;
 
         if (this.physics.overlap(lion, obs.sprite)) {
-          if (now - this._lastObstacleHitTime < 300) break;
+          if (now - this._lastObstacleHitTime < 300) break; // debounce
           this._lastObstacleHitTime = now;
 
           if (obs.type === 'river') {
             this.horde.removeLionSprite(lion, true);
           } else {
+            // tree / eagle / hunter — remove 1 lion
             this.horde.removeLionSprite(lion, false);
           }
+
           if (obs.type === 'hunter') {
             this.spawnManager.removeHunter(obs.sprite);
           }
+
           this.audio.playDeath();
           this.cameras.main.shake(180, 0.006);
           break;
@@ -210,13 +201,15 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Projectiles
+    // ── Projectiles from hunters ──
     for (let pi = this.spawnManager.projectiles.length - 1; pi >= 0; pi--) {
       const bullet = this.spawnManager.projectiles[pi];
       if (!bullet.active) continue;
+
       for (let li = lions.length - 1; li >= 0; li--) {
         const lion = lions[li];
         if (!lion.active || lion.isDead) continue;
+
         if (this.physics.overlap(lion, bullet)) {
           this.horde.removeLionSprite(lion, false);
           bullet.destroy();
@@ -228,7 +221,7 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Animals - use the new unified system
+    // ── Animals ──
     const leader = lions[0];
     if (!leader || !leader.active) return;
 
@@ -241,7 +234,7 @@ export default class GameScene extends Phaser.Scene {
         if (lionCount >= animalData.minLions) {
           this._convertAnimal(animalData);
         } else {
-          // Not enough lions - blocks like obstacle
+          // Buffalo blocks like an obstacle
           if (now - this._lastObstacleHitTime < 300) continue;
           this._lastObstacleHitTime = now;
           this.horde.removeLionSprite(leader, false);
@@ -254,27 +247,29 @@ export default class GameScene extends Phaser.Scene {
   }
 
   _convertAnimal(animalData) {
-    const { sprite, scoreValue, lionsGained } = animalData;
-    this.score += scoreValue;
+    const { sprite, type } = animalData;
+    const isLarge = (type === 'buffalo');
+    const scoreGain = isLarge ? SCORE_PER_LARGE_PREY : SCORE_PER_SMALL_PREY;
+    this.score += scoreGain;
 
+    // Burst particles
     const particles = this.add.particles(sprite.x, sprite.y, 'particle', {
       speed: { min: 80, max: 200 },
       scale: { start: 1.2, end: 0 },
       tint: [0xe8a628, 0xffd700, 0xff8c00],
       lifespan: 400,
-      quantity: lionsGained > 2 ? 20 : 10,
+      quantity: isLarge ? 20 : 10,
       emitting: false,
     });
-    particles.explode(lionsGained > 2 ? 20 : 10);
+    particles.explode(isLarge ? 20 : 10);
     this.time.delayedCall(500, () => particles.destroy());
-
-    // Destroy label
-    if (animalData.label && animalData.label.active) animalData.label.destroy();
 
     this.spawnManager.removeAnimal(animalData);
     sprite.destroy();
 
-    for (let i = 0; i < lionsGained; i++) {
+    // Add lion(s) to horde
+    const count = isLarge ? 3 : 1;
+    for (let i = 0; i < count; i++) {
       const last = this.horde.lions[this.horde.lions.length - 1];
       this.horde.addLion(last ? last.x - 38 : 120, GROUND_Y - 30);
     }
@@ -297,18 +292,13 @@ export default class GameScene extends Phaser.Scene {
     if (this.isGameOver) return;
     this.isGameOver = true;
 
-    this.audio.stopMusic();
     this.audio.playRoar();
     this.cameras.main.flash(300, 255, 0, 0, true);
     this.cameras.main.shake(300, 0.01);
 
-    // Save coins
-    const newTotal = this.totalCoins + this.coinsCollected;
-    localStorage.setItem('lionTsunamiCoins', newTotal.toString());
-
-    const finalScore = Math.floor(this.score);
+    const finalScore    = Math.floor(this.score);
     const finalDistance = Math.floor(this.distance);
-    const highScore = parseInt(localStorage.getItem('savannaHighScore') || '0');
+    const highScore     = parseInt(localStorage.getItem('savannaHighScore') || '0');
     if (finalScore > highScore) {
       localStorage.setItem('savannaHighScore', finalScore.toString());
     }
@@ -318,7 +308,6 @@ export default class GameScene extends Phaser.Scene {
         distance: finalDistance,
         score: finalScore,
         highScore: Math.max(finalScore, highScore),
-        coinsCollected: this.coinsCollected,
       });
     });
   }

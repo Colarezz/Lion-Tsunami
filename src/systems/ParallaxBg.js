@@ -53,13 +53,21 @@ export default class ParallaxBg {
     for (const layer of this.layers) {
       layer.offset += speed * layer.speedFactor * dt;
 
-      for (let i = 0; i < layer.images.length; i++) {
-        layer.images[i].x = i * layer.texWidth - layer.offset;
+      // Keep offset within bounds to prevent infinite growth
+      const totalWidth = layer.texWidth * layer.images.length;
+      if (totalWidth > 0) {
+        layer.offset = ((layer.offset % totalWidth) + totalWidth) % totalWidth;
+      }
 
-        // Wrap around
-        if (layer.images[i].x + layer.texWidth < 0) {
-          layer.images[i].x += layer.texWidth * layer.images.length;
+      for (let i = 0; i < layer.images.length; i++) {
+        let x = i * layer.texWidth - layer.offset;
+
+        // Wrap around to keep on screen
+        if (x + layer.texWidth < 0) {
+          x += totalWidth;
         }
+
+        layer.images[i].x = x;
       }
     }
   }
